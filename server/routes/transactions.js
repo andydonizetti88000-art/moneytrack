@@ -82,7 +82,7 @@ router.post('/', (req, res) => {
 // PUT /api/transactions/:id
 router.put('/:id', (req, res) => {
   const { date, amount, flow, category_id, category_name, source, note } = req.body;
-  const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(+req.params.id=);
+  const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(+req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const d = new Date(date || existing.date);
   db.prepare(`
