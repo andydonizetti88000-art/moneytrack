@@ -16,6 +16,7 @@ RUN cd client && npm run build
 # Create data directory for SQLite
 RUN mkdir -p /data
 ENV DB_PATH=/data
+ENV PORT=3001
 
 EXPOSE 3001
 
