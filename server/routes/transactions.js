@@ -35,7 +35,7 @@ router.get('/stats', (req, res) => {
   const byCategory = db.prepare(`
     SELECT t.category_name, c.icon, c.color, t.flow, SUM(t.amount) as total, COUNT(*) as count
     FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-    WHERE t.year=? AND t.month=? AND t.flow='Dépense'
+    WHERE t.year=? AND t.month=? AND t.flow='DÃ©pense'
     GROUP BY t.category_name ORDER BY total DESC LIMIT 10
   `).all(y, m);
 
@@ -50,7 +50,7 @@ router.get('/stats', (req, res) => {
 
   const budgetAlerts = db.prepare(`
     SELECT b.*, c.name as cat_name, c.icon, c.color,
-      COALESCE((SELECT SUM(amount) FROM transactions WHERE year=? AND month=? AND category_id=b.category_id AND flow='Dépense'), 0) as spent
+      COALESCE((SELECT SUM(amount) FROM transactions WHERE year=? AND month=? AND category_id=b.category_id AND flow='DÃ©pense'), 0) as spent
     FROM budgets b JOIN categories c ON b.category_id = c.id
   `).all(y, m);
 
@@ -100,6 +100,49 @@ router.put('/:id', (req, res) => {
   res.json(row);
 });
 
+
+// POST /api/transactions/import — bulk import (skips duplicates by date+amount+note)
+router.post('/import', (req, res) => {
+  const { transactions, clear } = req.body;
+  if (!Array.isArray(transactions)) return res.status(400).json({ error: 'transactions array requis' });
+
+  if (clear) {
+    db.prepare('DELETE FROM transactions').run();
+  }
+
+  const check = db.prepare('SELECT id FROM transactions WHERE date=? AND amount=? AND note=? AND flow=? LIMIT 1');
+  const insert = db.prepare(`
+    INSERT INTO transactions (date, year, month, amount, flow, category_id, category_name, source, note, origin)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let inserted = 0;
+  let skipped = 0;
+
+  const runAll = db.transaction(() => {
+    for (const t of transactions) {
+      const d = new Date(t.date);
+      const year = t.year || d.getFullYear();
+      const month = t.month || (d.getMonth() + 1);
+      const note = t.note || '';
+      const flow = t.flow || 'Dépense';
+      const amount = Math.abs(+t.amount);
+      const catName = t.category_name || t.category || '';
+
+      if (!clear) {
+        const exists = check.get(t.date, amount, note, flow);
+        if (exists) { skipped++; continue; }
+      }
+
+      insert.run(t.date, year, month, amount, flow, t.category_id || null, catName, t.source || '', note, t.origin || 'Import');
+      inserted++;
+    }
+  });
+
+  runAll();
+  res.json({ inserted, skipped, total: transactions.length });
+});
+
 // DELETE /api/transactions/:id
 router.delete('/:id', (req, res) => {
   const info = db.prepare('DELETE FROM transactions WHERE id = ?').run(+req.params.id);
@@ -107,7 +150,7 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/transactions/import — bulk import
+// POST /api/transactions/import â bulk import
 router.post('/import', (req, res) => {
   const { transactions } = req.body;
   if (!Array.isArray(transactions)) return res.status(400).json({ error: 'Array expected' });
@@ -122,7 +165,7 @@ router.post('/import', (req, res) => {
   const insertMany = db.transaction((txns) => {
     for (const t of txns) {
       const d = new Date(t.date);
-      const cat = getCatId.get(t.category || t.category_name || '', t.flow === 'Revenu' ? 'Revenu' : t.flow === 'Virement' ? 'Virement' : 'Dépense');
+      const cat = getCatId.get(t.category || t.category_name || '', t.flow === 'Revenu' ? 'Revenu' : t.flow === 'Virement' ? 'Virement' : 'DÃ©pense');
       const info = insert.run(
         t.id || null, t.date,
         d.getFullYear(), d.getMonth() + 1,
